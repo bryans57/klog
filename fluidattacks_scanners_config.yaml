@@ -1,0 +1,14 @@
+strict: true
+tracing_opt_out: true
+working_dir: .
+language: EN
+
+sast:
+  include:
+    - src/
+
+sca:
+  include:
+    - package.json
+    - bun.lock
+    - src/

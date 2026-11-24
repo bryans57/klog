@@ -1,0 +1,28 @@
+{
+    "name": "klog",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Parallel Kubernetes log search across pods",
+    "bin": {
+        "klog": "./src/cli.ts"
+    },
+    "scripts": {
+        "test": "bun test",
+        "typecheck": "tsc --noEmit",
+        "check": "bun run typecheck && bun test",
+        "build": "bun build --compile --outfile dist/klog src/cli.ts",
+        "install:global": "bun run build && install -m 755 dist/klog \"$HOME/.local/bin/klog\""
+    },
+    "devDependencies": {
+        "@types/bun": "^1.4.2",
+        "@types/react": "19.2.18",
+        "ink-testing-library": "4.0.0",
+        "react-devtools-core": "8.0.0",
+        "typescript": "^7.0.2"
+    },
+    "dependencies": {
+        "@ink-tools/ink-mouse": "2.1.0",
+        "ink": "6.8.0",
+        "react": "19.2.8"
+    }
+}

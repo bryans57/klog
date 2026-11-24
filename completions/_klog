@@ -1,0 +1,246 @@
+#compdef klog
+
+_klog_status_values() {
+    local -a vals
+    vals=(
+        '200:OK'
+        '400:bad request'
+        '401:no autorizado'
+        '403:prohibido'
+        '404:no existe'
+        '500:error del servicio'
+        '502:bad gateway'
+        '503:no disponible'
+    )
+    _describe 'status' vals
+}
+
+_klog_level_values() {
+    local -a vals
+    vals=(
+        'error:solo errores'
+        'warn:advertencias'
+        'info:informativos'
+        'debug:detalle'
+    )
+    _describe 'level' vals
+}
+
+_klog_output_values() {
+    local -a vals
+    vals=(
+        'pretty:texto con el pod'
+        'plain:solo la línea'
+        'json:una línea JSON por hit'
+    )
+    _describe 'output' vals
+}
+
+_klog_context_names() {
+    local current
+    current=$(kubectl config current-context 2>/dev/null)
+    local -a ctx
+    local name
+    for name in ${(f)"$(kubectl config get-contexts -o name 2>/dev/null)"}; do
+        if [[ $name == $current ]]; then
+            ctx+=("$name:contexto actual")
+        else
+            ctx+=("$name:cambiar con klog use")
+        fi
+    done
+    _describe 'context' ctx
+}
+
+_klog_namespaces() {
+    local -a nss
+    nss=(${(f)"$(kubectl get ns -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null)"})
+    if ((${#nss} == 0)); then
+        _message 'no se pudieron listar namespaces'
+        return
+    fi
+    _describe 'namespace' nss
+}
+
+_klog_namespace() {
+    local i ns
+    for ((i = 1; i < $#words; i++)); do
+        if [[ ${words[i]} == (-n|--namespace) ]]; then
+            ns=${words[i + 1]}
+        elif [[ ${words[i]} == --namespace=* ]]; then
+            ns=${words[i]#*=}
+        fi
+    done
+    if [[ -z $ns && -f $HOME/.config/klog/config.yaml ]]; then
+        ns=${$(sed -n 's/^defaultNamespace:[[:space:]]*//p' "$HOME/.config/klog/config.yaml")[1]}
+    fi
+    print -r -- "$ns"
+}
+
+_klog_apps() {
+    local ns
+    ns=$(_klog_namespace)
+    if [[ -z $ns ]]; then
+        _message 'pasa -n o defaultNamespace para listar apps'
+        return
+    fi
+    local -a apps
+    apps=(${(f)"$(kubectl get pods -n "$ns" -o jsonpath='{range .items[*]}{.metadata.labels.app}{"\n"}{end}' 2>/dev/null | sort -u)"})
+    apps=(${apps:#})
+    if ((${#apps} == 0)); then
+        _message "sin apps en $ns"
+        return
+    fi
+    _describe "app ($ns)" apps
+}
+
+_klog_names_in_ns() {
+    local kind=$1 label=$2
+    local ns
+    ns=$(_klog_namespace)
+    if [[ -z $ns ]]; then
+        _message 'pasa -n o defaultNamespace para listar'
+        return
+    fi
+    local -a names
+    names=(${(f)"$(kubectl get "$kind" -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null)"})
+    names=(${names:#})
+    if ((${#names} == 0)); then
+        _message "sin $label en $ns"
+        return
+    fi
+    _describe "$label ($ns)" names
+}
+
+_klog_pods() { _klog_names_in_ns pods pod }
+_klog_deployments() { _klog_names_in_ns deploy deployment }
+
+_klog_containers() {
+    local ns
+    ns=$(_klog_namespace)
+    if [[ -z $ns ]]; then
+        _message 'pasa -n o defaultNamespace para listar contenedores'
+        return
+    fi
+    local -a names
+    names=(${(f)"$(kubectl get pods -n "$ns" -o jsonpath='{range .items[*].spec.containers[*]}{.name}{"\n"}{end}' 2>/dev/null | sort -u)"})
+    names=(${names:#})
+    if ((${#names} == 0)); then
+        _message "sin contenedores en $ns"
+        return
+    fi
+    _describe "container ($ns)" names
+}
+
+_klog_since_values() {
+    local -a vals
+    vals=(
+        '30s:últimos 30 segundos'
+        '10m:últimos 10 minutos'
+        '30m:últimos 30 minutos'
+        '2h:últimas 2 horas'
+        '7d:últimos 7 días'
+        'ayer17:00:ayer a las 5 p.m., hora Bogotá'
+        'ayer19:00:ayer a las 7 p.m., hora Bogotá'
+        'hoy08:00:hoy a las 8 a.m.'
+        'hoy17:00:hoy a las 5 p.m.'
+    )
+    _describe 'since' vals
+}
+
+_klog_until_values() {
+    local -a vals
+    vals=(
+        'ayer19:00:ayer a las 7 p.m., hora Bogotá'
+        'ayer17:00:ayer a las 5 p.m., hora Bogotá'
+        'hoy19:00:hoy a las 7 p.m.'
+        'hoy17:00:hoy a las 5 p.m.'
+        '2h:hace 2 horas'
+    )
+    _describe 'until' vals
+}
+
+_klog_target_specs() {
+    specs+=(
+        '(-n --namespace)'{-n,--namespace}'[namespace]:namespace:_klog_namespaces'
+        '--context[contexto de kubectl]:context:_klog_context_names'
+        '--kube-context[contexto de kubectl]:context:_klog_context_names'
+        '--help[ayuda]'
+    )
+}
+
+_klog_flags() {
+    local mode=$1
+    local -a specs
+    _klog_target_specs
+    case $mode in
+        search|tail|pods)
+            specs+=(
+                '(-l --selector)'{-l,--selector}'[selector de labels, ej. app=foo]:selector:'
+                '--app[app del namespace]:app:_klog_apps'
+                '--deployment[deployment del namespace]:deployment:_klog_deployments'
+                '--pod[pod del namespace]:pod:_klog_pods'
+            )
+            ;;
+    esac
+    case $mode in
+        search|tail)
+            specs+=(
+                '--since[ventana]:since:_klog_since_values'
+                '--until[tope]:until:_klog_until_values'
+                '--status[status HTTP parseado]:status:_klog_status_values'
+                '--level[nivel parseado]:level:_klog_level_values'
+                '--tail[últimas N líneas]:n:(10 100 500)'
+                '--container[contenedor del namespace]:container:_klog_containers'
+                '--all-containers[todos los contenedores, incluye sidecars]'
+                '(--previous --current --both)--previous[logs del contenedor anterior]'
+                '(--previous --current --both)--current[logs del contenedor actual]'
+                '(--previous --current --both)--both[actual y anterior]'
+                '-i[ignorar mayúsculas, es el default]'
+                '--no-ignore-case[distinguir mayúsculas]'
+                '(-w --word)'{-w,--word}'[token completo: /ejemplo no coincide con /ejemplos]'
+                '--regex[la query es una regex de JavaScript]'
+                '(-C --around)'{-C,--around}'[líneas alrededor del match]:n:(1 3 5)'
+                '--concurrency[pods a la vez]:n:(5 10 20)'
+                '--output[formato, desactiva el visor]:format:_klog_output_values'
+                '--output-file[guardar las líneas]:file:_files'
+                '--viewer-limit[tope de líneas del visor]:n:(500 2000 5000)'
+                '--verbose[error completo de kubectl]'
+            )
+            ;;
+    esac
+    if [[ $mode == tail ]]; then
+        specs+=('--follow-pods[enganchar pods que aparezcan después]')
+    fi
+    if [[ $mode == search || $mode == tail ]]; then
+        specs+=('*:query:')
+    elif [[ $mode == apps ]]; then
+        specs+=('*:app:_klog_apps')
+    fi
+    _arguments -s -S $specs
+}
+
+local -a commands
+commands=(
+    'search:buscar en varios pods'
+    'tail:seguir logs en vivo'
+    'pods:listar pods'
+    'apps:listar apps y elegir con --app'
+    'contexts:listar contextos'
+    'use:cambiar de contexto'
+    'help:ayuda'
+)
+
+if (( CURRENT == 2 )); then
+    _describe 'command' commands
+    _arguments '--help[ayuda]' '--version[versión]'
+    return
+fi
+
+case ${words[2]} in
+    search) _klog_flags search ;;
+    tail) _klog_flags tail ;;
+    pods) _klog_flags pods ;;
+    apps) _klog_flags apps ;;
+    use|contexts) _klog_context_names ;;
+    *) _default ;;
+esac

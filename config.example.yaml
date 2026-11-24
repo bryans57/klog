@@ -1,0 +1,5 @@
+# Copy to ~/.config/klog/config.yaml
+defaultContext: cluster-bryans57-test
+defaultNamespace: ejemplos
+concurrency: 10
+viewerLimit: 2000
